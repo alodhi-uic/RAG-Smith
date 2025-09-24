@@ -1,0 +1,21 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root logger -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+
+    <!-- Your project loggers (now just top-level pkgs: config, util, mr, local) -->
+    <logger name="config" level="INFO"/>
+    <logger name="util" level="INFO"/>
+    <logger name="mr" level="INFO"/>
+    <logger name="local" level="INFO"/>
+
+    <!-- Keep Hadoop noise down -->
+    <logger name="org.apache.hadoop" level="WARN"/>
+</configuration>

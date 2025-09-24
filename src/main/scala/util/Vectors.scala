@@ -1,4 +1,8 @@
-object Vectors:
-  def l2Normalize(x: Array[Float]): Array[Float] =
-    val n = math.sqrt(x.map(v => v*v).sum.toDouble)
-    if n == 0.0 then x else x.map(v => (v / n).toFloat)
+package util
+
+object Vectors {
+  def l2Normalize(v: Array[Float]): Array[Float] = {
+    val norm = Math.sqrt(v.foldLeft(0.0)((a,b) => a + b*b)).toFloat
+    if (norm == 0f) v else v.map(_ / norm)
+  }
+}

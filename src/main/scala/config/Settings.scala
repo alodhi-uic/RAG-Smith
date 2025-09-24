@@ -1,23 +1,44 @@
+package config
+
 import com.typesafe.config.ConfigFactory
 
-final case class ChunkCfg(maxChars: Int, overlap: Int)
-final case class EmbCfg(model: String, similarity: String)
+final case class RagSettings(
+                              inputList: String,
+                              outputDir: String,
+                              shards: Int,
+                              window: Int,
+                              overlap: Int,
+                              embedModel: String,
+                              similarity: String,
+                              embedBatch: Int,
+                              ollamaHost: String,
+                              statsEnable: Boolean,
+                              statsOutCsv: String,
+                              statsOutYaml: String,
+                              statsSampleNN: Int,
+                              tmpDir: String,
+                              vecField: String,
+                              textField: String
+                            )
 
-object Settings:
-  private val c = ConfigFactory.load()
-  private val r = c.getConfig("rag")
-
-  val pdfDir   : String   = r.getString("pdfDir")
-  val outDir   : String   = r.getString("outDir")
-  val statsOut : String   = r.getString("statsOut")
-  val chunk    : ChunkCfg = ChunkCfg(
-    r.getConfig("chunk").getInt("maxChars"),
-    r.getConfig("chunk").getInt("overlap")
+object Settings {
+  private val c = ConfigFactory.load().getConfig("rag")
+  val rag: RagSettings = RagSettings(
+    inputList    = c.getString("input.list"),
+    outputDir    = c.getString("output.dir"),
+    shards       = c.getInt("shards"),
+    window       = c.getInt("chunk.windowChars"),
+    overlap      = c.getInt("chunk.overlapChars"),
+    embedModel   = c.getString("embed.model"),
+    similarity   = c.getString("embed.similarity"),
+    embedBatch   = c.getInt("embed.batchSize"),
+    ollamaHost   = sys.env.getOrElse("OLLAMA_HOST", c.getString("ollama.host")),
+    statsEnable  = c.getBoolean("stats.enable"),
+    statsOutCsv  = c.getString("stats.outCsv"),
+    statsOutYaml = c.getString("stats.outYaml"),
+    statsSampleNN= c.getInt("stats.sampleNN"),
+    tmpDir       = c.getString("local.tmpDir"),
+    vecField     = c.getString("index.fieldName"),
+    textField    = c.getString("index.textField")
   )
-  val emb      : EmbCfg   = EmbCfg(
-    r.getConfig("embeddings").getString("model"),
-    r.getConfig("embeddings").getString("similarity")
-  )
-  val shards   : Int      = r.getConfig("mapreduce").getInt("shards")
-  val topK     : Int      = r.getConfig("query").getInt("topK")
-  val ollamaBase: String  = c.getConfig("ollama").getString("baseUrl")
+}
