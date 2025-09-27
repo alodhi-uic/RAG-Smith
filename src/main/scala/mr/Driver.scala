@@ -13,7 +13,7 @@ import config.Settings
 
 object Driver {
   def main(args: Array[String]): Unit = {
-    val cfg = Settings.rag
+    val cfg = config.Settings
     val conf = new Configuration()
     conf.setInt("mapreduce.input.lineinputformat.linespermap", 1) // one PDF path per map task (adjust if needed)
 

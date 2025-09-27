@@ -1,44 +1,44 @@
 package config
 
 import com.typesafe.config.ConfigFactory
-
-final case class RagSettings(
-                              inputList: String,
-                              outputDir: String,
-                              shards: Int,
-                              window: Int,
-                              overlap: Int,
-                              embedModel: String,
-                              similarity: String,
-                              embedBatch: Int,
-                              ollamaHost: String,
-                              statsEnable: Boolean,
-                              statsOutCsv: String,
-                              statsOutYaml: String,
-                              statsSampleNN: Int,
-                              tmpDir: String,
-                              vecField: String,
-                              textField: String
-                            )
+import org.apache.lucene.index.VectorSimilarityFunction
 
 object Settings {
-  private val c = ConfigFactory.load().getConfig("rag")
-  val rag: RagSettings = RagSettings(
-    inputList    = c.getString("input.list"),
-    outputDir    = c.getString("output.dir"),
-    shards       = c.getInt("shards"),
-    window       = c.getInt("chunk.windowChars"),
-    overlap      = c.getInt("chunk.overlapChars"),
-    embedModel   = c.getString("embed.model"),
-    similarity   = c.getString("embed.similarity"),
-    embedBatch   = c.getInt("embed.batchSize"),
-    ollamaHost   = sys.env.getOrElse("OLLAMA_HOST", c.getString("ollama.host")),
-    statsEnable  = c.getBoolean("stats.enable"),
-    statsOutCsv  = c.getString("stats.outCsv"),
-    statsOutYaml = c.getString("stats.outYaml"),
-    statsSampleNN= c.getInt("stats.sampleNN"),
-    tmpDir       = c.getString("local.tmpDir"),
-    vecField     = c.getString("index.fieldName"),
-    textField    = c.getString("index.textField")
-  )
+  private val conf   = ConfigFactory.load()
+  private val ragCfg = conf.getConfig("rag")
+
+  // IO
+  val inputList: String = ragCfg.getString("input.list")
+  val outputDir: String = ragCfg.getString("output.dir")
+
+  // Sharding
+  val shards: Int = ragCfg.getInt("shards")
+
+  // Chunking
+  val window : Int = ragCfg.getInt("chunk.windowChars")
+  val overlap: Int = ragCfg.getInt("chunk.overlapChars")
+
+  // Embeddings / Ollama
+  val embedModel : String = ragCfg.getString("embed.model")
+  val similarity : String = ragCfg.getString("embed.similarity") // "cosine" | "dot" | "l2"
+  val embedBatch : Int    = ragCfg.getInt("embed.batchSize")
+  val ollamaHost : String = ragCfg.getString("ollama.host")
+
+  // Local scratch
+  val tmpDir: String = ragCfg.getString("local.tmpDir")
+
+  // Lucene field names (what your code expects)
+  val textField: String = ragCfg.getString("index.textField")
+  val vecField : String = ragCfg.getString("index.fieldName")
+
+  // Back-compat aliases (safe to keep; remove later if unused)
+  val indexTextField: String = textField
+  val indexVecField : String = vecField
+
+  // Convenience: Lucene similarity enum derived from config
+  val luceneSim: VectorSimilarityFunction = similarity.toLowerCase match {
+    case "cosine" => VectorSimilarityFunction.COSINE
+    case "dot"    => VectorSimilarityFunction.DOT_PRODUCT
+    case _        => VectorSimilarityFunction.EUCLIDEAN // treat anything else as L2
+  }
 }

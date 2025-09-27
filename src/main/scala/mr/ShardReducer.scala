@@ -1,61 +1,65 @@
 package mr
 
-import org.apache.hadoop.io.{IntWritable, Text}
+import org.apache.hadoop.io.{IntWritable, Text, NullWritable}
 import org.apache.hadoop.mapreduce.Reducer
 
 import java.nio.file.{Files, Paths}
-import java.util.UUID
+import scala.jdk.CollectionConverters._
 
-import io.circe.parser.*
-import org.apache.lucene.analysis.standard.StandardAnalyzer
-import org.apache.lucene.document.{Document, StringField, Field, TextField}
-import org.apache.lucene.index.{IndexWriter, IndexWriterConfig}
 import org.apache.lucene.store.FSDirectory
-import org.apache.lucene.index.VectorSimilarityFunction
-import org.apache.lucene.document.KnnFloatVectorField
-
-import scala.jdk.CollectionConverters.*
+import org.apache.lucene.index.{IndexWriter, IndexWriterConfig}
+import org.apache.lucene.document.{Document, Field, TextField, StoredField, KnnFloatVectorField}
 
 import config.Settings
 
-class ShardReducer extends Reducer[IntWritable, Text, Text, Text] {
-  private val cfg = Settings.rag
+// Circe: decode the mapper's JSON lines
+import io.circe.*
+import io.circe.parser.*
+import io.circe.generic.semiauto.*
 
-  override def reduce(key: IntWritable, values: java.lang.Iterable[Text],
-                      ctx: Reducer[IntWritable,Text,Text,Text]#Context): Unit = {
-    val shardId = key.get
-    val local   = Paths.get(cfg.tmpDir, s"lucene-shard-$shardId-${UUID.randomUUID().toString.take(8)}")
-    Files.createDirectories(local)
+final case class OutRec(path: String, chunk: Int, text: String, vec: Vector[Float])
+given Decoder[OutRec] = deriveDecoder[OutRec]
 
-    val iwc = new IndexWriterConfig(new StandardAnalyzer())
-    val iw  = new IndexWriter(FSDirectory.open(local), iwc)
+class ShardReducer
+  extends Reducer[IntWritable, Text, NullWritable, NullWritable] {
 
-    values.asScala.foreach { t =>
-      val rec  = parse(t.toString).toOption.get.hcursor
-      val doc  = new Document()
-      val docId= rec.get[String]("doc_id").toOption.get
-      val cid  = rec.get[Int]("chunk_id").toOption.get
-      val text = rec.get[String]("Personal/mapreduce/text").toOption.get
-      val vec  = rec.get[Vector[Float]]("vec").toOption.get.toArray
+  override def reduce(
+                       shardId: IntWritable,
+                       values: java.lang.Iterable[Text],
+                       context: Reducer[IntWritable, Text, NullWritable, NullWritable]#Context
+                     ): Unit = {
 
-      doc.add(new StringField("doc_id",   docId, Field.Store.YES))
-      doc.add(new StringField("chunk_id", cid.toString, Field.Store.YES))
-      doc.add(new TextField(cfg.textField, text, Field.Store.YES))
+    val it = values.iterator()
+    if (!it.hasNext) return // nothing to do for this shard
 
-      val sim = cfg.similarity.toLowerCase() match {
-        case "cosine" => VectorSimilarityFunction.COSINE
-        case "dot"    => VectorSimilarityFunction.DOT_PRODUCT
-        case _        => VectorSimilarityFunction.EUCLIDEAN
+    // /.../output/index_shard_00, 01, ...
+    val shardDir = Paths.get(Settings.outputDir, f"index_shard_${shardId.get}%02d")
+    Files.createDirectories(shardDir)
+
+    val writer = new IndexWriter(FSDirectory.open(shardDir), new IndexWriterConfig())
+
+    try {
+      it.asScala.foreach { t =>
+        decode[OutRec](t.toString) match {
+          case Right(rec) if rec.vec.nonEmpty =>
+            val doc = new Document()
+            doc.add(new StoredField("path",  rec.path))
+            doc.add(new StoredField("chunk", rec.chunk))
+            doc.add(new TextField(Settings.indexTextField, rec.text, Field.Store.NO))
+            // Two-arg ctor to avoid needing a Settings.luceneSim symbol:
+            doc.add(new KnnFloatVectorField(Settings.indexVecField, rec.vec.toArray))
+            writer.addDocument(doc)
+
+          case Right(_) =>
+            System.err.println("[ShardReducer] Skipped record with empty vector.")
+
+          case Left(err) =>
+            System.err.println(s"[ShardReducer] Bad JSON record skipped: $err")
+        }
       }
-      doc.add(new KnnFloatVectorField(cfg.vecField, vec, sim))
-      iw.addDocument(doc)
+      writer.commit()
+    } finally {
+      writer.close()
     }
-    iw.commit(); iw.close()
-
-    // Copy local index dir -> HDFS/S3 via Hadoop fs (Reducer's output path)
-    // The MR "output" key/value can be a manifest; real copying typically uses FileSystem API.
-    // For simplicity, we emit a line that your post-step can use to collect all shard dirs.
-    val marker = s"index_shard_$shardId\t$local"
-    ctx.write(new Text("SHARD"), new Text(marker))
   }
 }
