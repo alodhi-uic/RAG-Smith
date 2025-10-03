@@ -8,7 +8,7 @@ import scala.jdk.CollectionConverters._
 
 import org.apache.lucene.store.FSDirectory
 import org.apache.lucene.index.{IndexWriter, IndexWriterConfig}
-import org.apache.lucene.document.{Document, Field, TextField, StoredField, KnnFloatVectorField}
+import org.apache.lucene.document.{Document, Field, TextField, StringField, KnnFloatVectorField}
 
 import config.Settings
 
@@ -17,7 +17,8 @@ import io.circe.*
 import io.circe.parser.*
 import io.circe.generic.semiauto.*
 
-final case class OutRec(path: String, chunk: Int, text: String, vec: Vector[Float])
+// Match what RagMapper actually emits:
+final case class OutRec(doc_id: String, chunk_id: Int, text: String, vec: Vector[Float])
 given Decoder[OutRec] = deriveDecoder[OutRec]
 
 class ShardReducer
@@ -43,11 +44,13 @@ class ShardReducer
         decode[OutRec](t.toString) match {
           case Right(rec) if rec.vec.nonEmpty =>
             val doc = new Document()
-            doc.add(new StoredField("path",  rec.path))
-            doc.add(new StoredField("chunk", rec.chunk))
-            doc.add(new TextField(Settings.indexTextField, rec.text, Field.Store.NO))
-            // Two-arg ctor to avoid needing a Settings.luceneSim symbol:
-            doc.add(new KnnFloatVectorField(Settings.indexVecField, rec.vec.toArray))
+            // store ids for display
+            doc.add(new StringField("doc_id",   rec.doc_id,               Field.Store.YES))
+            doc.add(new StringField("chunk_id", rec.chunk_id.toString,    Field.Store.YES))
+            // store text so QueryCLI can show a snippet
+            doc.add(new TextField(Settings.textField, rec.text, Field.Store.YES))
+            // index vector with the configured similarity
+            doc.add(new KnnFloatVectorField(Settings.vecField, rec.vec.toArray, Settings.luceneSim))
             writer.addDocument(doc)
 
           case Right(_) =>
